@@ -1,0 +1,34 @@
+{
+  "KPlugin": {
+    "Authors": [
+      {
+        "Email": "yahir@example.com",
+        "Name": "Yahir"
+      }
+    ],
+    "Category": "System Information",
+    "Description": "A comprehensive system control panel with quick settings, application launcher and real-time system statistics",
+    "Icon": "utilities-system-monitor",
+    "Id": "com.github.yahir.systempanel",
+    "License": "LGPL-2.0-or-later",
+    "Name": "System Panel",
+    "Version": "1.0.0",
+    "Website": "https://github.com/yahir/system-panel-plasmoid",
+    "EnabledByDefault": true
+  },
+  "KPackageStructure": "Plasma/Applet",
+  "X-Plasma-API": "declarativeappletscript",
+  "X-Plasma-MainScript": "ui/main.qml",
+  "X-Plasma-API-Minimum-Version": "6.0",
+  "X-Plasma-StandAloneApp": false,
+  "X-Plasma-NotificationArea": false,
+  "X-Plasma-Provides": ["org.kde.plasma.systemmonitor"],
+  "X-KDE-PluginInfo-Depends": [
+    "org.kde.plasma.core",
+    "org.kde.kirigami",
+    "org.kde.plasma.components",
+    "org.kde.plasma.extras",
+    "org.kde.kconfig",
+    "org.kde.kcoreaddons"
+  ]
+}

@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    main.xml — esquema KConfig XT para com.github.yahir.systempanel
+
+    Plasma 6 lee este archivo para generar el objeto Plasmoid.configuration
+    y las propiedades de enlace cfg_* usadas en config.qml.
+
+        Las claves definidas aquí se corresponden exactamente con:
+            • Plasmoid.configuration.<key>   (en main.qml)
+            • cfg_<key>                      (en config.qml)
+-->
+<kcfg xmlns="http://www.kde.org/standards/kcfg/1.0"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="http://www.kde.org/standards/kcfg/1.0
+                          http://www.kde.org/standards/kcfg/1.0/kcfg.xsd">
+
+    <kcfgfile name=""/>
+
+    <group name="General">
+
+           <!-- Cada cuántos segundos SystemStats consulta datos de /proc y /sys.
+               Rango: 1–30. Valor por defecto: 2. -->
+        <entry name="refreshInterval" type="Int">
+            <default>2</default>
+            <min>1</min>
+            <max>30</max>
+        </entry>
+
+           <!-- Indica si el panel usa animaciones de desvanecido y deslizamiento al abrir y cerrar.
+               Desactívalas en hardware modesto para mejorar el rendimiento. -->
+        <entry name="showAnimations" type="Bool">
+            <default>true</default>
+        </entry>
+
+           <!-- Número de columnas en la cuadrícula de ApplicationLauncher.
+               Rango: 2–6. Valor por defecto: 4. -->
+        <entry name="launcherColumns" type="Int">
+            <default>4</default>
+            <min>2</min>
+            <max>6</max>
+        </entry>
+
+    </group>
+
+</kcfg>
