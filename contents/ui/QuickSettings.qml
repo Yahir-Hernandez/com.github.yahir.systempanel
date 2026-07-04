@@ -1,42 +1,41 @@
 /**
- * QuickSettings.qml — tira de ajustes rápidos del System Panel Plasmoid
+ * QuickSettings.qml  —  System Panel Plasmoid (com.github.yahir.systempanel)
  *
- * Tira autocontenida de controles rápidos. Gestiona su propia altura
- * (estados colapsado / expandido); el padre solo necesita proporcionar el ancho.
+ * A self-contained quick-settings control strip.  Manages its own height
+ * (collapsed / expanded states); the parent only needs to provide width.
  *
- * Fila siempre visible:
- *   Toggle Wi-Fi · Toggle Bluetooth · Slider de volumen · Slider de brillo ·
- *   Toggle de modo presentación · Flecha "Más"
+ * Always-visible row:
+ *   WiFi toggle · Bluetooth toggle · Volume slider · Brightness slider ·
+ *   Presentation Mode toggle · "More" chevron
  *
- * Sección expandida (deslizamiento animado, 250 ms):
- *   Toggle de notificaciones · Selector de perfil de energía ·
- *   Botones de Display / Sound / Network / System Settings
+ * Expanded section (animated slide-down, 250 ms):
+ *   Notifications toggle · Power-profile selector ·
+ *   Display / Sound / Network / System Settings buttons
  *
- * Todo el estado inicial se carga desde el host mediante QtCore.Process en
- * Component.onCompleted. Los cambios en los sliders usan debounce de 200 ms
- * antes de emitir el comando de shell correspondiente.
+ * All initial state is loaded from the host via PlasmaCore.DataSource
+ * (engine: "executable") in Component.onCompleted.  Slider changes are
+ * debounced 200 ms before issuing the underlying shell command.
  *
- * Switch.onToggled se usa en controles interactivos para que las asignaciones
- * programáticas hechas desde dispatchOutput() NO vuelvan a disparar comandos.
+ * Switch.onToggled is used for interactive controls so that programmatic
+ * assignments made from dispatchOutput() do NOT re-trigger shell commands.
  *
- * Destino: KDE Neon 24.04 · Plasma 6.x · Qt 6.x · KF6
+ * Target: KDE Neon 24.04 · Plasma 6.x · Qt 6.x · KF6
  */
 
 import QtQuick
-import QtCore
 import QtQuick.Controls as QQC2
 import QtQuick.Layouts
 import org.kde.plasma.core as PlasmaCore
 import org.kde.plasma.components as PlasmaComponents3
 import org.kde.kirigami as Kirigami
-
+import org.kde.plasma.plasma5support as Plasma5Support
 Item {
     id: quickSettings
 
-    // ── Tamaño ────────────────────────────────────────────────────────────────
-    // implicitHeight lo determina mainColumn, que a su vez sigue el
-    // implicitHeight animado de expandedSection al expandirse o colapsarse.
-    // El ColumnLayout padre en main.qml usa esto para redimensionar la franja.
+    // ── Sizing ─────────────────────────────────────────────────────────────────
+    // implicitHeight is driven by mainColumn, which itself follows
+    // expandedSection's animated implicitHeight during expand / collapse.
+    // The parent ColumnLayout in main.qml reads this to resize the strip.
     implicitWidth:  parent ? parent.width : Kirigami.Units.gridUnit * 40
     implicitHeight: mainColumn.implicitHeight
 
@@ -44,28 +43,28 @@ Item {
     //  STATE PROPERTIES
     // =========================================================================
 
-    /** Controla el panel expandido con animación de deslizamiento. */
+    /** Controls the animated slide-down expanded panel. */
     property bool settingsExpanded: false
 
-    // ── Red ───────────────────────────────────────────────────────────────────
+    // ── Network ────────────────────────────────────────────────────────────────
     property bool wifiEnabled: false
     property bool btEnabled:   false
 
-    // ── Audio / Pantalla ──────────────────────────────────────────────────────
+    // ── Audio / Display ────────────────────────────────────────────────────────
     property int volumeValue:     50   // 0–100
     property int brightnessValue: 50   // 0–100
 
-    // ── Varios ────────────────────────────────────────────────────────────────
+    // ── Misc ──────────────────────────────────────────────────────────────────
     property bool presentationMode:    false   // keepalive timer active
     property bool notificationsPaused: false   // dunst paused
 
-    // ── Perfil de energía: 0 = Performance, 1 = Balanced, 2 = Power Saver ───
+    // ── Power profile: 0 = Performance, 1 = Balanced, 2 = Power Saver ─────────
     property int powerProfileIndex: 1
 
     // =========================================================================
-    //  CADENAS DE COMANDOS
-    //  Se definen como propiedades para compartir exactamente la misma cadena
-    //  entre exec() y dispatchOutput(); un error tipográfico fallaría en silencio.
+    //  COMMAND STRINGS
+    //  Defined as properties so the exact string is shared between exec() calls
+    //  and dispatchOutput() matching — typos would cause silent failures.
     // =========================================================================
 
     readonly property string _cmdWifi:    "nmcli radio wifi"
@@ -75,77 +74,46 @@ Item {
     readonly property string _cmdPwrRead: "powerprofilesctl get"
 
     // =========================================================================
-    //  EJECUTOR DE COMANDOS DE SHELL (QtCore.Process con cola)
+    //  SHELL COMMAND RUNNER  (Plasma 6 DataSource, engine: "executable")
     // =========================================================================
 
-    property var commandQueue: []
-    property bool isProcessing: false
+    Plasma5Support.DataSource {
+        id: executable
+        engine: "executable"
+        connectedSources: []
 
-    /**
-     * Crea una nueva instancia de Process y ejecuta un comando.
-     * El Process se destruye al terminar para evitar fugas de recursos.
-     */
+        onNewData: function(sourceName, data) {
+            var out = (data["stdout"] || "").trim()
+            disconnectSource(sourceName)
+            dispatchOutput(sourceName, out)
+        }
+    }
+
+    /** Enqueue a shell command for asynchronous execution. */
     function exec(cmd) {
-        // Añade el comando a la cola.
-        commandQueue.push(cmd)
-
-        // Si no se está procesando nada, arranca el siguiente comando.
-        if (!isProcessing) {
-            processNextCommand()
-        }
+        executable.connectSource(cmd)
     }
 
     /**
-     * Procesa el siguiente comando de la cola.
-     */
-    function processNextCommand() {
-        if (commandQueue.length === 0) {
-            isProcessing = false
-            return
-        }
-
-        isProcessing = true
-        var cmd = commandQueue.shift()
-
-        var proc = Qt.createQmlObject(
-            'import QtCore; Process { }',
-            quickSettings
-        )
-
-        proc.finished.connect(function() {
-            var output = proc.readAllStandardOutput().toString().trim()
-            dispatchOutput(cmd, output)
-            proc.destroy()
-
-            // Procesa el siguiente comando de la cola.
-            processNextCommand()
-        })
-
-        proc.command = "/bin/sh"
-        proc.arguments = ["-c", cmd]
-        proc.start()
-    }
-
-    /**
-     * Dirige el stdout de un comando terminado a la propiedad de estado correcta.
-     * Los comandos se comparan por la cadena exacta pasada a exec().
+     * Route the stdout of a completed command to the appropriate state property.
+     * Commands are matched by their exact string as passed to exec().
      */
     function dispatchOutput(cmd, out) {
-        // Wi-Fi ("enabled" | "disabled").
+        // WiFi  ("enabled" | "disabled")
         if (cmd === _cmdWifi) {
             quickSettings.wifiEnabled = (out === "enabled")
             wifiSwitch.checked = quickSettings.wifiEnabled
             return
         }
 
-        // Bluetooth ("Soft blocked: no" significa que la radio está activa).
+        // Bluetooth  ("Soft blocked: no" means the radio is ON)
         if (cmd === _cmdBt) {
             quickSettings.btEnabled = (out.indexOf("Soft blocked: no") !== -1)
             btSwitch.checked = quickSettings.btEnabled
             return
         }
 
-        // Volumen (cadena entera de porcentaje, por ejemplo "75").
+        // Volume  (integer percentage string, e.g. "75")
         if (cmd === _cmdVolRead) {
             var vol = parseInt(out, 10)
             if (!isNaN(vol)) {
@@ -155,7 +123,7 @@ Item {
             return
         }
 
-        // Brillo (cadena entera de porcentaje, por ejemplo "60").
+        // Brightness  (integer percentage string, e.g. "60")
         if (cmd === _cmdBriRead) {
             var bri = parseInt(out, 10)
             if (!isNaN(bri)) {
@@ -165,7 +133,7 @@ Item {
             return
         }
 
-        // Perfil de energía ("performance" | "balanced" | "power-saver").
+        // Power profile  ("performance" | "balanced" | "power-saver")
         if (cmd === _cmdPwrRead) {
             if      (out === "performance") quickSettings.powerProfileIndex = 0
             else if (out === "balanced")    quickSettings.powerProfileIndex = 1
@@ -176,12 +144,12 @@ Item {
     }
 
     // =========================================================================
-    //  TEMPORIZADORES DE DEBOUNCE
+    //  DEBOUNCE TIMERS
     // =========================================================================
 
     /**
-     * Debounce de volumen: se reinicia en cada movimiento del slider; dispara
-     * un único comando amixer 200 ms después del último cambio.
+     * Volume debounce — restarts on every user slider move; fires 200 ms after
+     * the last one and issues a single amixer command.
      */
     Timer {
         id:       volumeDebounce
@@ -191,7 +159,7 @@ Item {
     }
 
     /**
-     * Debounce de brillo: mismo patrón que volumen, usando brightnessctl.
+     * Brightness debounce — same pattern as volume, using brightnessctl.
      */
     Timer {
         id:       brightnessDebounce
@@ -201,10 +169,9 @@ Item {
     }
 
     /**
-     * Keepalive del modo presentación.
-     * Reinicia el temporizador del salvapantallas cada 30 s para que la pantalla
-     * permanezca despierta. El temporizador arranca y se detiene solo mediante
-     * el binding running.
+     * Presentation-mode keepalive.
+     * Resets the X screensaver timer every 30 s so the display stays awake.
+     * The timer starts and stops automatically via the `running` binding.
      */
     Timer {
         id:       presentationTimer
@@ -215,7 +182,7 @@ Item {
     }
 
     // =========================================================================
-    //  ESTADO INICIAL
+    //  INITIAL STATE
     // =========================================================================
     Component.onCompleted: {
         exec(_cmdWifi)
@@ -226,7 +193,7 @@ Item {
     }
 
     // =========================================================================
-    //  DISTRIBUCIÓN
+    //  LAYOUT
     // =========================================================================
 
     ColumnLayout {
@@ -236,25 +203,25 @@ Item {
             right: parent.right
             top:   parent.top
         }
-        // El espaciado entre secciones se maneja con padding y separadores internos.
+        // Section-level spacing is handled by internal padding / separators.
         spacing: 0
 
         // ─────────────────────────────────────────────────────────────────────
-        //  FILA SIEMPRE VISIBLE
+        //  ALWAYS-VISIBLE ROW
         // ─────────────────────────────────────────────────────────────────────
         RowLayout {
             id:               alwaysRow
             Layout.fillWidth: true
             spacing:          Kirigami.Units.smallSpacing
 
-            // ── 1. Toggle Wi-Fi ───────────────────────────────────────────
-            // Un Switch cuyo indicador se acompaña con un icono + etiqueta
-            // apilados verticalmente dentro de contentItem, reemplazando el
-            // área de texto por defecto.
+            // ── 1. WiFi toggle ────────────────────────────────────────────
+            // A Switch whose indicator is paired with an icon + label pair
+            // stacked vertically inside contentItem (replaces the default
+            // text-only content area).
             PlasmaComponents3.Switch {
                 id: wifiSwitch
-                // Sin binding en vivo: el valor inicial lo inyecta dispatchOutput
-                // para que las actualizaciones programáticas no disparen onToggled.
+                // No live binding — initial value injected by dispatchOutput so
+                // that programmatic updates never fire onToggled.
 
                 QQC2.ToolTip.text:    i18n("Toggle Wi-Fi")
                 QQC2.ToolTip.visible: hovered
@@ -278,15 +245,14 @@ Item {
                     }
                 }
 
-                // onToggled se dispara SOLO por interacción del usuario; aquí sí
-                // es seguro llamar a exec().
+                // onToggled fires ONLY on user interaction — safe to call exec().
                 onToggled: exec(checked ? "nmcli radio wifi on" : "nmcli radio wifi off")
             }
 
-            // ── 2. Toggle Bluetooth ──────────────────────────────────────
+            // ── 2. Bluetooth toggle ───────────────────────────────────────
             PlasmaComponents3.Switch {
                 id: btSwitch
-                // Sin binding en vivo: el valor inicial lo inyecta dispatchOutput.
+                // No live binding — initial value injected by dispatchOutput.
 
                 QQC2.ToolTip.text:    i18n("Toggle Bluetooth")
                 QQC2.ToolTip.visible: hovered
@@ -313,15 +279,14 @@ Item {
                 onToggled: exec(checked ? "rfkill unblock bluetooth" : "rfkill block bluetooth")
             }
 
-            // Divisor vertical fino entre los toggles compactos y los sliders.
+            // Thin vertical divider between compact toggles and the sliders
             Kirigami.Separator {
-                // orientation: Qt.Vertical
                 Layout.fillHeight: true
             }
 
-            // ── 3. Slider de volumen ─────────────────────────────────────
-            // El icono de altavoz se adapta al nivel actual.
-            // Los movimientos del slider usan debounce de 200 ms antes de enviar amixer.
+            // ── 3. Volume slider ──────────────────────────────────────────
+            // Speaker icon adapts to the current level.
+            // Slider moves are debounced 200 ms before issuing amixer.
             RowLayout {
                 id:               volumeControl
                 Layout.fillWidth: true
@@ -357,7 +322,7 @@ Item {
                     Layout.fillWidth: true
                     Layout.alignment: Qt.AlignVCenter
 
-                    QQC2.ToolTip.text:    i18n("Volume: %1%").arg(Math.round(value))
+                    QQC2.ToolTip.text:    i18n("Volume: %1%",Math.round(value))
                     QQC2.ToolTip.visible: hovered
                     QQC2.ToolTip.delay:   Kirigami.Units.toolTipDelay
 
@@ -412,7 +377,7 @@ Item {
                     Layout.fillWidth: true
                     Layout.alignment: Qt.AlignVCenter
 
-                    QQC2.ToolTip.text:    i18n("Brightness: %1%").arg(Math.round(value))
+                    QQC2.ToolTip.text:    i18n("Brightness: %1%",Math.round(value))
                     QQC2.ToolTip.visible: hovered
                     QQC2.ToolTip.delay:   Kirigami.Units.toolTipDelay
 
@@ -435,7 +400,7 @@ Item {
 
             // Thin vertical divider before the right-side controls
             Kirigami.Separator {
-                // orientation: Qt.Vertical
+                // orientation:       Qt.Vertical
                 Layout.fillHeight: true
             }
 

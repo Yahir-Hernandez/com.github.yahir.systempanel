@@ -73,98 +73,58 @@ var _seen = {}
 /**
  * processDesktopFiles(model, filePaths, doneCallback)
  *
- * Punto de entrada llamado por ApplicationLauncher.qml después de que el
- * comando `find` devuelve una lista de rutas absolutas de archivos *.desktop.
+ * Ahora NO lee los archivos — solo prepara el estado y devuelve la lista de
+ * rutas válidas para que QML las lea una por una vía DataSource.
  *
- * @param {ListModel} model          — QML ListModel to populate
- * @param {string[]}  filePaths      — absolute paths from the find command
- * @param {function}  [doneCallback] — called (once) when all reads settle
+ * @returns {string[]} rutas válidas que QML debe leer y pasar a
+ *                      handleDesktopFileContent()
  */
 function processDesktopFiles(model, filePaths, doneCallback) {
-    // Reinicia todo el estado del módulo para esta sesión.
     _model        = model
     _doneCallback = doneCallback || null
     _seen         = {}
 
-    // Elimina las cadenas vacías que String.split() puede producir en los bordes.
     var validPaths = filePaths.filter(function(p) {
         return p.trim() !== ""
     })
 
     if (validPaths.length === 0) {
         if (_doneCallback) _doneCallback()
-        return
+        return []
     }
 
-    // Fija el contador antes de emitir peticiones para evitar una carrera en
-    // la que el primer XHR termine antes de tiempo y dispare el callback.
     _pending = validPaths.length
+    return validPaths
+}
 
-    for (var i = 0; i < validPaths.length; i++) {
-        _readDesktopFile(validPaths[i].trim())
+/**
+ * handleDesktopFileContent(filePath, content)
+ *
+ * Llamado por QML una vez por cada archivo ya leído (vía `cat` + DataSource).
+ * Reemplaza lo que antes hacía _readDesktopFile() + su callback de XHR.
+ */
+function handleDesktopFileContent(filePath, content) {
+    if (content && content.trim() !== "") {
+        _parseDesktopFile(content)
+    }
+    _decrementPending()
+}
+
+function _decrementPending() {
+    _pending--
+    if (_pending <= 0 && _doneCallback) {
+        var cb = _doneCallback
+        _doneCallback = null
+        cb()
     }
 }
+
 
 
 // ══════════════════════════════════════════════════════════════════════════════
 //  Ayudantes privados
 // ══════════════════════════════════════════════════════════════════════════════
 
-/**
- * _readDesktopFile(filePath)
- *
- * Realiza un GET asíncrono para `file://<filePath>`.
- * Si funciona, pasa el texto recibido a _parseDesktopFile().
- * Disminuye _pending tanto en éxito como en error y dispara _doneCallback
- * cuando la última solicitud pendiente termina.
- *
- * Nota sobre los códigos de estado para URLs file:// en el motor QML de Qt:
- *   una lectura exitosa devuelve estado 0 (no 200), así que aceptamos ambos.
- *
- * @param {string} filePath — ruta POSIX absoluta (sin prefijo file://)
- */
-function _readDesktopFile(filePath) {
-    if (!filePath) {
-        _decrementPending()
-        return
-    }
-
-    var xhr = new XMLHttpRequest()
-
-    xhr.onreadystatechange = function() {
-        if (xhr.readyState !== XMLHttpRequest.DONE) return
-
-        // status 0 = éxito con file:// en XHR de Qt; status 200 = éxito HTTP.
-        if (xhr.status === 0 || xhr.status === 200) {
-            _parseDesktopFile(xhr.responseText)
-        }
-        // Omite en silencio los archivos que no se pueden leer
-        // (permisos, enlaces rotos, etc.).
-
-        _decrementPending()
-    }
-
-    // Asíncrono: retorna de inmediato; el callback corre en el event loop de Qt.
-    xhr.open("GET", "file://" + filePath, true)
-    xhr.send()
-}
-
-/**
- * _decrementPending()
- *
- * Disminuye el contador de peticiones activas y dispara _doneCallback si esta
- * era la última solicitud pendiente. Se separa en un ayudante para mantener la
- * lógica en un solo lugar sin importar si la lectura tuvo éxito o falló.
- */
-function _decrementPending() {
-    _pending--
-    if (_pending <= 0 && _doneCallback) {
-        // Protección: nunca se dispara más de una vez aunque el contador baje.
-        var cb = _doneCallback
-        _doneCallback = null
-        cb()
-    }
-}
 
 /**
  * _parseDesktopFile(content)

@@ -85,7 +85,6 @@ PlasmoidItem {
             width:  Math.min(parent.width, parent.height) * 0.75
             height: width
             source: "utilities-system-monitor"
-
             // Atenúa un poco el icono mientras el panel está abierto.
             opacity: root.expanded ? 0.70 : 1.0
             Behavior on opacity { NumberAnimation { duration: 200 } }

@@ -1,78 +1,73 @@
 /**
- * ApplicationLauncher.qml — cuadrícula de aplicaciones con búsqueda
+ * ApplicationLauncher.qml — Searchable application grid
  *
- * Parte de com.github.yahir.systempanel (plasmoide de Plasma 6)
- * Destino: KDE Neon 24.04 · Plasma 6.x · Qt 6.x · KF6
+ * Part of com.github.yahir.systempanel (Plasma 6 plasmoid)
+ * Target: KDE Neon 24.04 · Plasma 6.x · Qt 6.x · KF6
  *
- * ── Interfaz externa (usada por main.qml) ────────────────────────────────────
- *   property int columns     — número de columnas de la cuadrícula; viene de
- *                               Plasmoid.configuration.launcherColumns (por defecto 4)
- *   function focusSearch()   — fuerza el foco de teclado en el campo de búsqueda;
- *                               se llama desde fullRepresentation.onActiveFocusChanged
+ * ── External interface (used by main.qml) ────────────────────────────────────
+ *   property int columns     — number of grid columns; driven by
+ *                               Plasmoid.configuration.launcherColumns (default 4)
+ *   function focusSearch()   — forces keyboard focus into the search field;
+ *                               called from fullRepresentation.onActiveFocusChanged
  *
- * ── Carga de apps (dos pasos, ver AppLauncher.js) ───────────────────────────
- *   Paso 1 — findDesktopFiles() ejecuta un comando `find` para reunir
- *            las rutas absolutas de todos los archivos *.desktop del sistema.
- *   Paso 2 — AppLauncher.processDesktopFiles() lanza un XMLHttpRequest por
- *            cada ruta, analiza cada sección [Desktop Entry] y agrega las
- *            entradas válidas de Application a appModel.
- *   Paso 3 — filter("") se llama cuando terminan todas las lecturas XHR y
- *            copia la lista completa ordenada a filteredModel.
+ * ── App loading (two-step, see AppLauncher.js) ───────────────────────────────
+ *   Step 1 — findDS (executable DataSource) runs a `find` command to collect
+ *            the absolute paths of all *.desktop files on the system.
+ *   Step 2 — AppLauncher.processDesktopFiles() issues one XMLHttpRequest per
+ *            path, parses each [Desktop Entry] section, and appends valid
+ *            Application entries to appModel.
+ *   Step 3 — filter("") is called once all XHR reads settle, which copies
+ *            the full sorted list into filteredModel (the GridView's model).
  *
- * ── Filtrado ────────────────────────────────────────────────────────────────
- *   Cada pulsación reconstruye filteredModel revisando appModel y buscando
- *   entradas cuyo nombre o descripción contengan el texto de búsqueda
- *   sin distinguir mayúsculas y minúsculas.
- *   Los resultados se ordenan alfabéticamente por nombre.
+ * ── Filtering ────────────────────────────────────────────────────────────────
+ *   Each keystroke rebuilds filteredModel by scanning appModel for entries
+ *   whose name or description contains the search text (case-insensitive).
+ *   Results are sorted alphabetically by name.
  */
 
 import QtQuick
-import QtCore
 import QtQuick.Controls as QQC2
 import QtQuick.Layouts
 import org.kde.plasma.plasmoid                  // Plasmoid singleton (expanded, etc.)
-import org.kde.plasma.core as PlasmaCore
 import org.kde.plasma.components as PlasmaComponents3
 import org.kde.kirigami as Kirigami
 import "../code/AppLauncher.js" as AppLauncher
-
+import org.kde.plasma.plasma5support as Plasma5Support
 Item {
     id: root
 
     // ── External interface ────────────────────────────────────────────────────
 
-    /// Número de columnas en la cuadrícula; lo define main.qml desde la configuración.
+    /// Number of columns in the app grid; set by main.qml from configuration.
     property int columns: 4
 
-    /// Lo llama main.qml cuando el overlay recibe foco activo para que el
-    /// usuario pueda empezar a escribir sin hacer clic primero.
+    /// Called by main.qml when the panel overlay gains active focus so the
+    /// user can immediately start typing without clicking first.
     function focusSearch() {
         searchField.forceActiveFocus()
     }
 
     // ── Internal state ────────────────────────────────────────────────────────
 
-    /// Verdadero mientras el escaneo inicial de *.desktop y las lecturas XHR siguen activas.
+    /// True while the initial *.desktop scan + XHR reads are still in progress.
     property bool loading: true
 
     // ── Models ────────────────────────────────────────────────────────────────
 
-    /// Lista maestra poblada una sola vez al arrancar por AppLauncher.processDesktopFiles().
-    /// No se borra después de la carga inicial; es la fuente autoritativa para filter().
+    /// Master list populated once at startup by AppLauncher.processDesktopFiles().
+    /// Never cleared after initial load; serves as the authoritative source for filter().
     ListModel { id: appModel }
 
-    /// Subconjunto visible mostrado en appGrid. Se reconstruye cada vez que cambia searchField.text.
+    /// Visible subset shown in appGrid.  Rebuilt on every change to searchField.text.
     ListModel { id: filteredModel }
 
     // ── Filtering / search ────────────────────────────────────────────────────
 
     /**
-    * Reconstruye filteredModel a partir de appModel, conservando solo las
-    * entradas cuyo nombre o descripción contengan `text` sin distinguir
-    * mayúsculas y minúsculas.
-    * Los resultados se ordenan alfabéticamente para que la cuadrícula sea
-    * estable en cada pulsación.
-    * Pasar una cadena vacía restaura la lista completa ordenada.
+     * Rebuilds filteredModel from appModel, keeping only entries whose name
+     * or description contains `text` (case-insensitive).
+     * Results are sorted alphabetically so the grid is stable on each keystroke.
+     * Passing an empty string restores the full sorted list.
      */
     function filter(text) {
         var needle = text.toLowerCase()
@@ -93,8 +88,8 @@ Item {
             }
         }
 
-        // Orden alfabético estable: hace la cuadrícula determinista
-        // independientemente del orden en que terminaron los XHR asíncronos.
+        // Stable alphabetical sort — makes the grid deterministic regardless of
+        // the order in which async XHR reads completed during startup.
         results.sort(function(a, b) {
             var na = a.name.toLowerCase()
             var nb = b.name.toLowerCase()
@@ -109,76 +104,92 @@ Item {
         }
     }
 
-    // ── Paso 1: recolectar rutas *.desktop con `find` ─────────────────────────
+    // ── Step 1: Collect *.desktop paths via `find` ────────────────────────────
     /**
-    * Ejecuta un comando find para reunir rutas de archivos *.desktop desde
-    * ubicaciones XDG estándar:
-    *   /usr/share/applications          — paquetes de la distribución
-    *   /usr/local/share/applications    — software instalado localmente
-    *   $HOME/.local/share/applications  — apps instaladas por usuario
-    *
-    * `2>/dev/null` oculta errores de directorios inexistentes.
-    * `head -400` limita la salida para evitar arranques muy lentos en sistemas
-    *             con muchísimas aplicaciones.
+     * The `executable` DataSource engine passes the source name as a shell
+     * command (via /bin/sh), so standard variables ($HOME) and operators
+     * (pipes, redirection) all work as expected.
+     *
+     * We search three standard XDG locations:
+     *   /usr/share/applications          — distribution packages
+     *   /usr/local/share/applications    — locally installed software
+     *   $HOME/.local/share/applications  — per-user installed apps
+     *
+     * `2>/dev/null` suppresses errors for directories that do not exist.
+     * `head -400`   caps the output to avoid extremely long startup times on
+     *               systems with many applications.
      */
-    function findDesktopFiles() {
-        var proc = Qt.createQmlObject(
-            'import QtCore; Process { }',
-            root
-        )
+ // ── Step 1: Collect *.desktop paths via `find` ────────────────────────────
+    Plasma5Support.DataSource {
+        id: findDS
+        engine: "executable"
+        connectedSources: []
 
-        proc.finished.connect(function() {
-            var stdout = proc.readAllStandardOutput().toString().trim()
+        onNewData: (sourceName, data) => {
+            var stdout = (data["stdout"] || "").toString().trim()
+
             if (stdout !== "") {
                 var paths = stdout.split("\n").filter(function(p) {
                     return p.trim() !== ""
                 })
-                // Paso 2: leer y analizar cada archivo .desktop de forma asíncrona.
-                AppLauncher.processDesktopFiles(appModel, paths, function() {
-                    // Paso 3: todas las lecturas XHR terminaron; ya se puede renderizar.
+
+                var validPaths = AppLauncher.processDesktopFiles(appModel, paths, function() {
                     root.loading = false
                     root.filter("")
                 })
+
+                for (var i = 0; i < validPaths.length; i++) {
+                    fileReaderDS.readFile(validPaths[i])
+                }
             } else {
-                // `find` no devolvió nada (algo muy raro); se detiene el indicador.
                 root.loading = false
             }
-            proc.destroy()
-        })
 
+            disconnectSource(sourceName)
+        }
+    }
+
+    // ── Step 2: Read each .desktop file's contents ────────────────────────────
+    Plasma5Support.DataSource {
+        id: fileReaderDS
+        engine: "executable"
+        connectedSources: []
+
+        property var pathBySource: ({})
+
+        onNewData: (sourceName, data) => {
+            var content  = (data["stdout"] || "").toString()
+            var filePath = pathBySource[sourceName]
+
+            AppLauncher.handleDesktopFileContent(filePath, content)
+
+            delete pathBySource[sourceName]
+            disconnectSource(sourceName)
+        }
+
+        function readFile(path) {
+            var cmd = "cat " + JSON.stringify(path)
+            pathBySource[cmd] = path
+            connectSource(cmd)
+        }
+    }
+
+    // ── Step 3: Launch DataSource ──────────────────────────────────────────────
+    Plasma5Support.DataSource {
+        id: execDS
+        engine: "executable"
+        connectedSources: []
+        onNewData: function(sourceName, _data) {
+            disconnectSource(sourceName)
+        }
+    }
+
+    // Kick off the directory scan once this component is fully constructed.
+    Component.onCompleted: {
         var cmd = "find /usr/share/applications /usr/local/share/applications " +
                   "$HOME/.local/share/applications -maxdepth 1 -name '*.desktop' " +
                   "2>/dev/null | head -400"
-
-        proc.command = "/bin/sh"
-        proc.arguments = ["-c", cmd]
-        proc.start()
-    }
-
-    // ── Paso 2b: lanzar la aplicación mediante Process ───────────────────────
-    /**
-    * Lanza una aplicación cuando el usuario hace clic en una tarjeta.
-    * Crea un Process, ejecuta el comando y destruye el proceso enseguida
-    * (patrón fire-and-forget).
-     */
-    function launchApp(execString) {
-        var proc = Qt.createQmlObject(
-            'import QtCore; Process { }',
-            root
-        )
-
-        proc.finished.connect(function() {
-            proc.destroy()
-        })
-
-        proc.command = "/bin/sh"
-        proc.arguments = ["-c", execString]
-        proc.start()
-    }
-
-    // Inicia el escaneo del directorio cuando este componente ya está construido.
-    Component.onCompleted: {
-        findDesktopFiles()
+        findDS.connectSource(cmd)
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
@@ -188,17 +199,17 @@ Item {
         anchors.fill: parent
         spacing: Kirigami.Units.smallSpacing
 
-        // ── Barra de búsqueda ───────────────────────────────────────────────
+        // ── Search bar ────────────────────────────────────────────────────────
         PlasmaComponents3.TextField {
             id: searchField
             Layout.fillWidth: true
 
             placeholderText: i18n("Search applications…")
 
-            // Reserva espacio a la izquierda para el icono de búsqueda embebido.
+            // Reserve room on the left for the inline search icon
             leftPadding: searchIcon.width + Kirigami.Units.smallSpacing * 3
 
-            // Icono de búsqueda incrustado en el área de padding izquierdo.
+            // Inline search icon embedded in the left padding area
             Kirigami.Icon {
                 id: searchIcon
                 anchors {
@@ -212,7 +223,7 @@ Item {
                 opacity: 0.6
             }
 
-            // Botón de limpiar (✕): visible solo cuando el campo tiene texto.
+            // Clear (✕) button — visible only when the field contains text
             rightPadding: clearButton.visible
                           ? clearButton.width + Kirigami.Units.smallSpacing
                           : Kirigami.Units.smallSpacing
@@ -237,23 +248,23 @@ Item {
                 QQC2.ToolTip.delay:   Kirigami.Units.toolTipDelay
             }
 
-            // Reconstruye la cuadrícula visible en cada pulsación.
+            // Rebuild the visible grid on every keystroke
             onTextChanged: root.filter(text)
         }
 
-        // ── Área de cuadrícula de apps ───────────────────────────────────────
+        // ── App grid area ─────────────────────────────────────────────────────
         Item {
             Layout.fillWidth:  true
             Layout.fillHeight: true   // fills all remaining vertical space
 
-            // Indicador de carga: se muestra mientras el escaneo inicial sigue activo.
+            // Loading spinner — shown while the initial app scan is in progress
             PlasmaComponents3.BusyIndicator {
                 anchors.centerIn: parent
                 visible: root.loading
                 running: visible
             }
 
-            // Etiqueta "Sin resultados": se muestra solo cuando hay búsqueda activa y cero coincidencias.
+            // "No results" label — shown only during an active search with 0 matches
             PlasmaComponents3.Label {
                 anchors.centerIn: parent
                 visible: !root.loading && filteredModel.count === 0 && searchField.text !== ""
@@ -265,17 +276,17 @@ Item {
             QQC2.ScrollView {
                 anchors.fill: parent
                 clip: true
-                // Oculta la barra horizontal: la cuadrícula se ajusta por columnas.
+                // Suppress horizontal scrollbar — the grid wraps by column count
                 QQC2.ScrollBar.horizontal.policy: QQC2.ScrollBar.AlwaysOff
 
                 GridView {
                     id: appGrid
                     model: filteredModel
 
-                    // Evita una mala configuración con cero columnas.
+                    // Guard against a zero-column misconfiguration from settings
                     readonly property int safeColumns: Math.max(1, root.columns)
 
-                    // Divide el ancho disponible por igual; la altura admite icono + texto de dos líneas.
+                    // Divide available width evenly; height accommodates icon + two-line label
                     cellWidth:  Math.floor(width / safeColumns)
                     cellHeight: Kirigami.Units.iconSizes.large
                                + Kirigami.Units.gridUnit * 2.6
@@ -284,7 +295,7 @@ Item {
                     clip:  true
                     focus: true
 
-                    // Desplazamiento con inercia para una sensación nativa.
+                    // Physics-based momentum scrolling for a native feel
                     flickDeceleration:    1500
                     maximumFlickVelocity: 2500
 
@@ -294,8 +305,8 @@ Item {
                         width:  appGrid.cellWidth
                         height: appGrid.cellHeight
 
-                        // Animación de aparición: cada tarjeta entra suavemente
-                        // cuando se llena la grilla o cambia la búsqueda.
+                        // Fade-in animation — each tile appears smoothly when the
+                        // grid is first populated or after a search clears/changes
                         opacity: 0
                         NumberAnimation on opacity {
                             from:    0
@@ -304,7 +315,7 @@ Item {
                             running: true
                         }
 
-                        // Resaltado al pasar el cursor: fondo sutil y acorde al tema.
+                        // Hover highlight — subtle, theme-respecting background
                         Rectangle {
                             anchors {
                                 fill:    parent
@@ -318,7 +329,7 @@ Item {
                             Behavior on color { ColorAnimation { duration: 120 } }
                         }
 
-                        // ── Contenido de la tarjeta: icono + nombre ─────────────
+                        // ── Tile content: icon + name ──────────────────────────
                         ColumnLayout {
                             anchors {
                                 fill:    parent
@@ -326,8 +337,8 @@ Item {
                             }
                             spacing: Kirigami.Units.smallSpacing / 2
 
-                            // Icono de la aplicación: se carga de forma asíncrona para
-                            // mantener la UI responsive mientras se resuelven muchos iconos.
+                            // Application icon — loaded asynchronously to keep the UI
+                            // responsive while many icons are resolved in parallel
                             Kirigami.Icon {
                                 Layout.alignment: Qt.AlignHCenter
                                 source:       model.icon || "application-x-executable"
@@ -336,7 +347,7 @@ Item {
                                 //asynchronous: true   // lazy-load; avoids blocking the UI thread
                             }
 
-                            // Nombre de la aplicación: hasta dos líneas y truncado si hace falta.
+                            // Application name — up to two lines, right-truncated if needed
                             PlasmaComponents3.Label {
                                 Layout.fillWidth: true
                                 text:                model.name
@@ -349,7 +360,7 @@ Item {
                             }
                         }
 
-                        // ── Manejo de clic: lanzar app y cerrar el panel ─────────
+                        // ── Click handler — launch app and close the panel ──────
                         MouseArea {
                             id: tileMA
                             anchors.fill: parent
@@ -357,16 +368,17 @@ Item {
                             cursorShape:  Qt.PointingHandCursor
 
                             onClicked: {
-                                // Elimina códigos de campo XDG (%U, %f, %i, %k, %c …)
-                                // antes de pasar el comando al shell; solo tienen sentido
-                                // para launchers de desktop-file, no para ejecución directa.
+                                // Strip XDG field codes (%U, %f, %i, %k, %c …) before
+                                // passing to the shell; they are only meaningful to
+                                // desktop-file launchers, not raw command execution.
                                 var cleanExec = model.exec.replace(/ ?%[a-zA-Z]/g, "").trim()
                                 if (cleanExec !== "") {
-                                    root.launchApp(cleanExec)
+                                    execDS.connectSource(cleanExec)
                                 }
-                                // Colapsa el overlay del panel.
-                                // Plasmoid es el singleton adjunto de org.kde.plasma.plasmoid
-                                // y está disponible en todos los QML del plasmoide.
+                                // Collapse the panel overlay.
+                                // Plasmoid is the attached singleton from
+                                // org.kde.plasma.plasmoid, accessible from all QML
+                                // files within the plasmoid's component hierarchy.
                                 Plasmoid.expanded = false
                             }
                         }

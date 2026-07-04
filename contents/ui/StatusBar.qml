@@ -1,116 +1,84 @@
 /**
- * StatusBar.qml — barra de estado del System Panel Plasmoid
+ * StatusBar.qml  —  System Panel Plasmoid (com.github.yahir.systempanel)
  *
- * Barra horizontal autocontenida que muestra, de izquierda a derecha:
- *   1. Avatar del usuario + nombre de usuario
- *   2. Nivel de batería y estado de carga (consulta /sys/class/power_supply/BAT0/)
- *   3. SSID y fuerza de señal de Wi-Fi (consulta vía nmcli)
- *   4. Reloj en vivo (se actualiza cada segundo, con Qt puro y sin shell)
- *   5. Hostname (consulta hostname -s)
+ * A self-contained horizontal status bar that displays, left-to-right:
+ *   1. User avatar + username
+ *   2. Battery level and charging state   (polled from /sys/class/power_supply/BAT0/)
+ *   3. WiFi SSID + signal strength         (polled via nmcli)
+ *   4. Live clock                          (updated every second, pure Qt — no shell)
+ *   5. Hostname                            (polled via hostname -s)
  *
- * Todos los datos se obtienen internamente; el padre solo necesita definir el tamaño.
+ * All data is fetched internally — the parent only needs to set the item size.
  *
- * Destino: KDE Neon 24.04 · Plasma 6.x · Qt 6.x · KF6
+ * Target: KDE Neon 24.04 · Plasma 6.x · Qt 6.x · KF6
  */
 
 import QtQuick
-import QtCore
 import QtQuick.Controls as QQC2
 import QtQuick.Layouts
-import org.kde.plasma.core as PlasmaCore
 import org.kde.plasma.components as PlasmaComponents3
 import org.kde.kirigami as Kirigami
-
+import org.kde.plasma.plasma5support as Plasma5Support
 Item {
     id: statusBar
 
-    // ── Sugerencia de tamaño (el padre puede sobrescribirla con Layout.preferredHeight) ──────────
+    // ── Sizing hint (parent may override via Layout.preferredHeight) ──────────
     implicitHeight: Kirigami.Units.gridUnit * 3.5
     implicitWidth:  parent ? parent.width : Kirigami.Units.gridUnit * 40
 
     // =========================================================================
-    //  ESTADO INTERNO
+    //  INTERNAL STATE
     // =========================================================================
 
-    // Usuario
+    // User
     property string userName: ""
 
-    // Batería (-1 significa que no hay batería o que todavía no se leyó)
+    // Battery  (-1 means no battery present / not yet read)
     property int    batteryLevel:    -1
     property bool   batteryCharging: false
     property bool   batteryPresent:  false
 
-    // Wi-Fi (-1 en la señal significa desconectado o desconocido)
+    // WiFi  (-1 signal means disconnected / unknown)
     property string wifiSsid:   ""
     property int    wifiSignal: -1
 
     // Hostname
     property string hostName: ""
 
-    // Reloj (lo actualiza clockTimer, no hace falta shell)
+    // Clock (updated by clockTimer, no shell needed)
     property string clockText: Qt.formatDateTime(new Date(), "ddd dd MMM  HH:mm:ss")
 
     // =========================================================================
-    //  EJECUTOR DE COMANDOS DE SHELL (QtCore.Process)
+    //  SHELL COMMAND RUNNER  (Plasma 6 DataSource, engine: "executable")
     // =========================================================================
     /**
-     * Pool de procesos que reutiliza instancias de Process para ejecutar comandos.
-     * Cada comando se encola y se ejecuta de forma secuencial.
+     * A single DataSource handles every shell command.
+     * Usage: call exec(cmd) to queue a command; onNewData dispatches
+     * the stdout to the appropriate state property based on sourceName,
+     * then disconnects the source so it can be reused.
      */
-    property var commandQueue: []
-    property bool isProcessing: false
+     Plasma5Support.DataSource {
+         id: executable
+         engine: "executable"
+         connectedSources: []
+         onNewData: function(sourceName, data) {
+             var out = (data["stdout"] || "").trim()
+             disconnectSource(sourceName)
+             dispatchOutput(sourceName, out)
+         }
+     }
 
-    /**
-     * Crea una nueva instancia de Process y ejecuta un comando.
-     * El Process se destruye al terminar para evitar fugas de recursos.
-     */
+    /** Queue a shell command for execution. */
     function exec(cmd) {
-        // Agrega el comando a la cola.
-        commandQueue.push(cmd)
-
-        // Si no se está procesando nada, arranca el siguiente comando.
-        if (!isProcessing) {
-            processNextCommand()
-        }
+        executable.connectSource(cmd)
     }
 
     /**
-     * Procesa el siguiente comando de la cola.
-     */
-    function processNextCommand() {
-        if (commandQueue.length === 0) {
-            isProcessing = false
-            return
-        }
-
-        isProcessing = true
-        var cmd = commandQueue.shift()
-
-        var proc = Qt.createQmlObject(
-            'import QtCore; Process { }',
-            statusBar
-        )
-
-        proc.finished.connect(function() {
-            var output = proc.readAllStandardOutput().toString().trim()
-            dispatchOutput(cmd, output)
-            proc.destroy()
-
-            // Procesa el siguiente comando de la cola.
-            processNextCommand()
-        })
-
-        proc.command = "/bin/sh"
-        proc.arguments = ["-c", cmd]
-        proc.start()
-    }
-
-    /**
-     * Redirige el stdout de un comando terminado a la variable de estado correcta.
-     * Cada comando se identifica por su cadena exacta.
+     * Route the stdout of a completed command to the right state variable.
+     * Each command is identified by its exact command string.
      */
     function dispatchOutput(cmd, out) {
-        // ── Usuario (whoami) ─────────────────────────────────────────────
+        // ── Username (whoami) ────────────────────────────────────────────
         if (cmd === "whoami") {
             if (out.length > 0) {
                 statusBar.userName = out
@@ -118,7 +86,7 @@ Item {
             return
         }
 
-        // ── Capacidad de batería ─────────────────────────────────────────
+        // ── Battery capacity ─────────────────────────────────────────────
         if (cmd === "cat /sys/class/power_supply/BAT0/capacity") {
             var cap = parseInt(out, 10)
             if (!isNaN(cap)) {
@@ -128,17 +96,17 @@ Item {
             return
         }
 
-        // ── Estado de carga de batería ───────────────────────────────────
+        // ── Battery charging status ──────────────────────────────────────
         if (cmd === "cat /sys/class/power_supply/BAT0/status") {
             // Possible values: Charging, Discharging, Full, Unknown, Not charging
             statusBar.batteryCharging = (out === "Charging" || out === "Full")
             return
         }
 
-        // ── SSID y señal de Wi-Fi (salida nmcli -t: yes:SSID:signal) ─────
+        // ── WiFi SSID + signal  (nmcli -t output: yes:SSID:signal) ───────
         if (cmd === "nmcli -t -f active,ssid,signal dev wifi | grep '^yes'") {
             if (out.length > 0) {
-                // Formato: "yes:MyNetwork:85"
+                // Format: "yes:MyNetwork:85"
                 var parts = out.split(":")
                 if (parts.length >= 3) {
                     statusBar.wifiSsid   = parts[1]
@@ -149,14 +117,14 @@ Item {
                     statusBar.wifiSignal = parseInt(parts[1], 10) || 0
                 }
             } else {
-                // No hay conexión activa.
+                // No active connection
                 statusBar.wifiSsid   = ""
                 statusBar.wifiSignal = -1
             }
             return
         }
 
-        // ── Hostname ────────────────────────────────────────────────────
+        // ── Hostname ─────────────────────────────────────────────────────
         if (cmd === "hostname -s") {
             if (out.length > 0) {
                 statusBar.hostName = out
@@ -166,13 +134,13 @@ Item {
     }
 
     // =========================================================================
-    //  TEMPORIZADORES
+    //  TIMERS
     // =========================================================================
 
     /**
-     * Temporizador maestro de refresco: consulta batería y Wi-Fi cada 5 segundos.
-     * El usuario y el hostname se obtienen una vez en Component.onCompleted y se
-     * vuelven a consultar aquí por si cambiaron.
+     * Master refresh timer — polls battery and WiFi every 5 seconds.
+     * Username and hostname are fetched once at Component.onCompleted and
+     * re-polled here in case of a user switch or hostname change.
      */
     Timer {
         id: refreshTimer
@@ -193,8 +161,8 @@ Item {
     }
 
     /**
-     * Temporizador del reloj: actualiza el texto cada segundo usando el formateo
-     * de fecha de Qt, sin necesidad de un proceso de shell.
+     * Clock timer — updates the clock text every second using Qt's built-in
+     * date formatting (no shell process needed).
      */
     Timer {
         id: clockTimer
@@ -207,19 +175,19 @@ Item {
         }
     }
 
-    // Obtiene el usuario una vez al iniciar (refreshTimer también lo vuelve a leer,
-    // pero esto asegura que esté disponible antes del primer tick de 5 segundos).
+    // Fetch username once on startup (also picked up by refreshTimer,
+    // but this ensures it is available before the first 5-second tick).
     Component.onCompleted: {
         exec("whoami")
     }
 
     // =========================================================================
-    //  FUNCIONES AUXILIARES
+    //  HELPER FUNCTIONS
     // =========================================================================
 
     /**
-     * Mapea un nivel de batería (0-100) y una bandera de carga a un nombre de icono.
-     * Usa la nomenclatura estándar de iconos de batería de freedesktop/KDE.
+     * Map a battery level (0-100) and charging flag to an icon name.
+     * Uses standard freedesktop/KDE battery icon naming.
      */
     function batteryIconName(level, charging) {
         if (charging) return "battery-charging"
@@ -231,8 +199,8 @@ Item {
     }
 
     /**
-     * Mapea la intensidad de señal Wi-Fi (0-100) a un nombre de icono.
-     * Devuelve el icono de desconectado cuando la señal es -1.
+     * Map a WiFi signal strength (0-100) to an icon name.
+     * Returns a disconnected icon when signal is -1.
      */
     function wifiIconName(signal) {
         if (signal < 0)  return "network-wireless-disconnected"
@@ -244,7 +212,7 @@ Item {
     }
 
     // =========================================================================
-    //  DISTRIBUCIÓN
+    //  LAYOUT
     // =========================================================================
     RowLayout {
         id: mainRow
@@ -252,7 +220,7 @@ Item {
         anchors.margins: Kirigami.Units.smallSpacing
         spacing:         Kirigami.Units.largeSpacing
 
-        // ── 1. USUARIO ───────────────────────────────────────────────────
+        // ── 1. USER ───────────────────────────────────────────────────────
         RowLayout {
             spacing: Kirigami.Units.smallSpacing
             Layout.alignment: Qt.AlignVCenter
@@ -274,14 +242,13 @@ Item {
             }
         }
 
-        // ── Separador ────────────────────────────────────────────────────
+        // ── Separator ─────────────────────────────────────────────────────
         Kirigami.Separator {
-            // orientation: Qt.Vertical
             Layout.fillHeight: true
         }
 
-        // ── 2. BATERÍA ───────────────────────────────────────────────────
-        // Se oculta por completo cuando no se detecta una batería.
+        // ── 2. BATTERY ────────────────────────────────────────────────────
+        // Hidden entirely when no battery is detected.
         RowLayout {
             spacing: Kirigami.Units.smallSpacing
             visible: statusBar.batteryPresent
@@ -301,7 +268,7 @@ Item {
                     return statusBar.batteryCharging ? pct + "  " + i18n("Charging") : pct
                 }
                 color: {
-                    // Código de color: rojo por debajo de 15%, naranja por debajo de 30%, normal en otro caso.
+                    // Colour-code: red below 15%, orange below 30%, normal otherwise
                     if (statusBar.batteryLevel >= 0 && statusBar.batteryLevel < 15)
                         return Kirigami.Theme.negativeTextColor
                     if (statusBar.batteryLevel >= 0 && statusBar.batteryLevel < 30)
@@ -312,14 +279,14 @@ Item {
             }
         }
 
-        // Separador después de la batería: solo se muestra cuando hay batería.
+        // Separator after battery — only shown when battery is present
         Kirigami.Separator {
-            // orientation: Qt.Vertical
+            //orientation: Qt.Vertical
             Layout.fillHeight: true
             visible: statusBar.batteryPresent
         }
 
-        // ── 3. WI-FI ────────────────────────────────────────────────────
+        // ── 3. WIFI ───────────────────────────────────────────────────────
         RowLayout {
             spacing: Kirigami.Units.smallSpacing
             Layout.alignment: Qt.AlignVCenter
@@ -343,20 +310,20 @@ Item {
                            ? Kirigami.Theme.disabledTextColor
                            : Kirigami.Theme.textColor
                 Layout.alignment: Qt.AlignVCenter
-                // Trunca los SSID largos de forma elegante.
+                // Truncate long SSIDs gracefully
                 elide: Text.ElideRight
                 maximumLineCount: 1
             }
         }
 
-        // ── Separador ────────────────────────────────────────────────────
+        // ── Separator ─────────────────────────────────────────────────────
         Kirigami.Separator {
-            // orientation: Qt.Vertical
+            //orientation: Qt.Vertical
             Layout.fillHeight: true
         }
 
-        // ── 4. RELOJ ─────────────────────────────────────────────────────
-        // El espaciador empuja el reloj hacia el centro de la barra.
+        // ── 4. CLOCK ──────────────────────────────────────────────────────
+        // Spacer pushes the clock toward the centre of the bar.
         Item { Layout.fillWidth: true }
 
         RowLayout {
@@ -381,13 +348,13 @@ Item {
 
         Item { Layout.fillWidth: true }
 
-        // ── Separador ────────────────────────────────────────────────────
+        // ── Separator ─────────────────────────────────────────────────────
         Kirigami.Separator {
-            // orientation: Qt.Vertical
+            //orientation: Qt.Vertical
             Layout.fillHeight: true
         }
 
-        // ── 5. HOSTNAME ─────────────────────────────────────────────────
+        // ── 5. HOSTNAME ───────────────────────────────────────────────────
         RowLayout {
             spacing: Kirigami.Units.smallSpacing
             Layout.alignment: Qt.AlignVCenter

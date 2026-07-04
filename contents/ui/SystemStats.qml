@@ -2,18 +2,17 @@
 // SPDX-FileCopyrightText: 2024 Yahir <com.github.yahir>
 
 import QtQuick
-import QtCore
 import QtQuick.Layouts
-import org.kde.plasma.core as PlasmaCore
 import org.kde.plasma.components as PlasmaComponents3
 import org.kde.kirigami as Kirigami
+import org.kde.plasma.plasma5support as Plasma5Support
 
 import "../code/SystemMonitor.js" as SysMon
 
 Item {
     id: systemStats
 
-    // Intervalo de refresco en milisegundos (por defecto 2000 ms, lo define el padre desde la configuración).
+    // Refresh interval in milliseconds (default 2000ms, set by parent from config)
     property int refreshInterval: 2000
 
     implicitHeight: Kirigami.Units.gridUnit * 7.5
@@ -71,52 +70,27 @@ Item {
     readonly property string cmdTemp: "cat /sys/class/thermal/thermal_zone0/temp 2>/dev/null || echo \"0\""
     readonly property string cmdNet:  "awk 'NR>2 && !/lo/{rx+=$2; tx+=$10} END{print rx, tx}' /proc/net/dev"
 
-    /**
-     * Execute a shell command and call the callback with the output.
-     * The Process is destroyed after completion.
-     */
-    function execCommand(cmd, callback) {
-        var proc = Qt.createQmlObject(
-            'import QtCore; Process { }',
-            systemStats
-        )
+    Plasma5Support.DataSource {
+        id: sysMonDS
+        engine: "executable"
+        connectedSources: []
 
-        proc.finished.connect(function() {
-            var output = proc.readAllStandardOutput().toString().trim()
-            if (callback) {
-                callback(output)
-            }
-            proc.destroy()
-        })
-
-        proc.command = "/bin/sh"
-        proc.arguments = ["-c", cmd]
-        proc.start()
+        onNewData: function(src, data) {
+            handleOutput(src, data["stdout"].trim())
+            disconnectSource(src)
+        }
     }
 
     function refreshAll() {
         // CPU: first sample — store and schedule second sample
         cpuWaitingDiff = true
-        execCommand(cmdCpu, function(output) {
-            handleCpu(output)
-        })
+        sysMonDS.connectSource(cmdCpu)
 
         // RAM, Disk, Temp, Net run immediately
-        execCommand(cmdRam, function(output) {
-            handleRam(output)
-        })
-
-        execCommand(cmdDisk, function(output) {
-            handleDisk(output)
-        })
-
-        execCommand(cmdTemp, function(output) {
-            handleTemp(output)
-        })
-
-        execCommand(cmdNet, function(output) {
-            handleNet(output)
-        })
+        sysMonDS.connectSource(cmdRam)
+        sysMonDS.connectSource(cmdDisk)
+        sysMonDS.connectSource(cmdTemp)
+        sysMonDS.connectSource(cmdNet)
     }
 
     // Second CPU sample fires 500ms after the first
@@ -124,11 +98,7 @@ Item {
         id: cpuDiffTimer
         interval: 500
         repeat: false
-        onTriggered: {
-            execCommand(systemStats.cmdCpu, function(output) {
-                handleCpu(output)
-            })
-        }
+        onTriggered: sysMonDS.connectSource(systemStats.cmdCpu)
     }
 
     Timer {
@@ -141,7 +111,21 @@ Item {
 
     Component.onCompleted: refreshAll()
 
-    // ── Output handler ─────────────────────────────────────────────────────────
+    // ── Output router ──────────────────────────────────────────────────────────
+
+    function handleOutput(src, output) {
+        if (src === cmdCpu) {
+            handleCpu(output)
+        } else if (src === cmdRam) {
+            handleRam(output)
+        } else if (src === cmdDisk) {
+            handleDisk(output)
+        } else if (src === cmdTemp) {
+            handleTemp(output)
+        } else if (src === cmdNet) {
+            handleNet(output)
+        }
+    }
 
     function handleCpu(output) {
         var sample = SysMon.parseCpuLine(output)
@@ -331,16 +315,17 @@ Item {
             }
 
             // Progress bar (optional)
-            //Kirigami.ProgressBar {
-            //    Layout.fillWidth: true
-            //    visible:  card.showBar
-            //    value:    card.barValue
-            //    from:     0.0
-            //    to:       1.0
-            //
-            //    // Tint the bar using the color-coded foreground
-            //    Kirigami.Theme.highlightColor: card.barColor
-            //}
+
+            /*Kirigami.ProgressBar {
+                Layout.fillWidth: true
+                visible:  card.showBar
+                value:    card.barValue
+                from:     0.0
+                to:       1.0
+
+                // Tint the bar using the color-coded foreground
+                Kirigami.Theme.highlightColor: card.barColor
+            }*/
 
             Item { Layout.fillHeight: true }
         }
