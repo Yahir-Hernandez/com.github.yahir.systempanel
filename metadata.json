@@ -2,8 +2,8 @@
   "KPlugin": {
     "Authors": [
       {
-        "Email": "yahir@example.com",
-        "Name": "Yahir"
+        "Email": "oscaryahirhdz@gmail.com",
+        "Name": "Yahir Hernandez"
       }
     ],
     "Category": "System Information",
@@ -13,7 +13,7 @@
     "License": "LGPL-2.0-or-later",
     "Name": "System Panel",
     "Version": "1.0.0",
-    "Website": "https://github.com/yahir/system-panel-plasmoid",
+    "Website": "https://github.com/Yahir-Hernandez/com.github.yahir.systempanel",
     "EnabledByDefault": true
   },
   "KPackageStructure": "Plasma/Applet",

@@ -144,8 +144,8 @@ SystemStats.qml toma dos muestras de CPU separadas por 500 ms para calcular el u
 ### Opción 1: copia manual para desarrollo
 
 ```bash
-git clone https://github.com/yahir/system-panel-plasmoid.git
-cd system-panel-plasmoid
+git clone https://github.com/Yahir-Hernandez/com.github.yahir.systempanel.git
+cd com.github.yahir.systempanel
 cp -r . ~/.local/share/plasma/plasmoids/com.github.yahir.systempanel
 kquitapp6 plasmashell && kstart plasmashell
 ```
