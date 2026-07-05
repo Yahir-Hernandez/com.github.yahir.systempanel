@@ -127,9 +127,9 @@ Item {
             handleDisk(output)
         } else if (src === cmdTemp) {
             handleTemp(output)
-        } else if (src === cmdNet) {
+        } /*else if (src === cmdNet) {
             handleNet(output)
-        } else if (src === cmdBattery) {
+        }*/ else if (src === cmdBattery) {
             handleBattery(output)
         }
     }
@@ -215,6 +215,11 @@ Item {
     ColumnLayout {
         anchors.fill: parent
         spacing: Kirigami.Units.smallSpacing
+        PlasmaComponents3.Label {
+            text: i18n("SYSTEM STATISTICS")
+            font.weight: Font.Bold
+            opacity: 0.7
+        }
 
         // ── Battery card ─────────────────────────────────────────────────────────
         MetricCard {
@@ -323,12 +328,20 @@ Item {
             Kirigami.Theme.textColor.b,
             0.08
         )*/
+        /*Rectangle {
+            implicitHeight: 2
+            implicitWidth: parent.width
+            color: card.barColor
+            anchors.bottom: parent.bottom
+            anchors.left: parent.left
+            anchors.right: parent.right
+        }*/
 
         RowLayout {
             anchors.fill: parent
             spacing: Kirigami.Units.largeSpacing
             anchors.margins: Kirigami.Units.largeSpacing
-            Layout.fillWidth: true
+            Layout.fillWidth: true           
             // Icon
             Kirigami.Icon {
                 Layout.alignment: Qt.AlignHCenter

@@ -104,6 +104,13 @@ Item {
         }
     }
 
+    Rectangle {
+        anchors.fill:    parent
+        color: Kirigami.Theme.backgroundColor
+        radius: Kirigami.Units.cornerRadius
+        border.color: Kirigami.Theme.disabledTextColor
+    }
+
     // ── Step 1: Collect *.desktop paths via `find` ────────────────────────────
     /**
      * The `executable` DataSource engine passes the source name as a shell
@@ -197,7 +204,8 @@ Item {
     // ═══════════════════════════════════════════════════════════════════════════
     ColumnLayout {
         anchors.fill: parent
-        spacing: Kirigami.Units.smallSpacing
+        spacing: Kirigami.Units.largeSpacing
+        anchors.margins: Kirigami.Units.largeSpacing
 
         // ── Search bar ────────────────────────────────────────────────────────
         PlasmaComponents3.TextField {
@@ -258,11 +266,11 @@ Item {
             Layout.fillHeight: true   // fills all remaining vertical space
 
             // Loading spinner — shown while the initial app scan is in progress
-            PlasmaComponents3.BusyIndicator {
+            /*PlasmaComponents3.BusyIndicator {
                 anchors.centerIn: parent
                 visible: root.loading
                 running: visible
-            }
+            }*/
 
             // "No results" label — shown only during an active search with 0 matches
             PlasmaComponents3.Label {

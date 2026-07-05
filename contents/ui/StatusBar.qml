@@ -46,7 +46,7 @@ Item {
     property string hostName: ""
 
     // Clock (updated by clockTimer, no shell needed)
-    property string clockText: Qt.formatDateTime(new Date(), "ddd dd MMM  HH:mm:ss")
+    property string clockText: Qt.formatDateTime(new Date(), "ddd dd MMM") + " | " + Qt.formatDateTime(new Date(), "HH:mm:ss")
 
     // =========================================================================
     //  SHELL COMMAND RUNNER  (Plasma 6 DataSource, engine: "executable")
@@ -171,7 +171,7 @@ Item {
         repeat:   true
 
         onTriggered: {
-            statusBar.clockText = Qt.formatDateTime(new Date(), "ddd dd MMM  HH:mm:ss")
+            statusBar.clockText = Qt.formatDateTime(new Date(), "ddd dd MMM") + " | " + Qt.formatDateTime(new Date(), "HH:mm:ss")
         }
     }
 
@@ -211,13 +211,20 @@ Item {
         return "network-wireless-disconnected"
     }
 
+    Rectangle {
+        anchors.fill:    parent
+        color: Kirigami.Theme.backgroundColor
+        radius: Kirigami.Units.cornerRadius
+        border.color: Kirigami.Theme.disabledTextColor
+    }
+
     // =========================================================================
     //  LAYOUT
     // =========================================================================
     RowLayout {
         id: mainRow
         anchors.fill:    parent
-        anchors.margins: Kirigami.Units.smallSpacing
+        anchors.margins: Kirigami.Units.largeSpacing
         spacing:         Kirigami.Units.largeSpacing
 
         // ── 1. USER ───────────────────────────────────────────────────────
@@ -243,7 +250,7 @@ Item {
         }
 
         // ── Separator ─────────────────────────────────────────────────────
-        Kirigami.Separator {
+        /*Kirigami.Separator {
             Layout.fillHeight: true
         }
 
@@ -277,7 +284,7 @@ Item {
                 }
                 Layout.alignment: Qt.AlignVCenter
             }
-        }
+        }*/
 
         // Separator after battery — only shown when battery is present
         /*Kirigami.Separator {
@@ -330,12 +337,12 @@ Item {
             spacing: Kirigami.Units.smallSpacing
             Layout.alignment: Qt.AlignVCenter
 
-            Kirigami.Icon {
+            /*Kirigami.Icon {
                 source: "clock"
                 width:  Kirigami.Units.iconSizes.small
                 height: width
                 Layout.alignment: Qt.AlignVCenter
-            }
+            }*/
 
             PlasmaComponents3.Label {
                 text:  statusBar.clockText
