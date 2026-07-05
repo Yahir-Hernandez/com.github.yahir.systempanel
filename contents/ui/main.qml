@@ -104,7 +104,100 @@ PlasmoidItem {
     // ═════════════════════════════════════════════════════════════════════
     //  REPRESENTACIÓN COMPLETA  ─ overlay del panel del sistema
     // ═════════════════════════════════════════════════════════════════════
-    fullRepresentation: FocusScope {
+    fullRepresentation:  FocusScope {
+        id: fullRoot
+        readonly property int scW: Screen.desktopAvailableWidth
+        readonly property int scH: Screen.desktopAvailableHeight
+
+        Layout.minimumWidth:    Kirigami.Units.gridUnit * 44
+        Layout.minimumHeight:   Kirigami.Units.gridUnit * 34
+        Layout.preferredWidth:  Math.min(scW * 0.92, Kirigami.Units.gridUnit * 108)
+        Layout.preferredHeight: Math.min(scH * 0.88, Kirigami.Units.gridUnit * 72)
+        Layout.maximumWidth:    scW
+        Layout.maximumHeight:   scH
+
+        // ── Manejo de teclado ────────────────────────────────────────────
+        focus: true
+        Keys.onEscapePressed: root.expanded = false
+
+        // ── Animación de entrada ─────────────────────────────────────────
+        opacity: root.expanded ? 1.0 : 0.0
+        Behavior on opacity {
+            enabled: root.showAnimations
+            NumberAnimation { duration: 240; easing.type: Easing.OutCubic }
+        }
+
+        // Deslizamiento hacia arriba al abrir.
+        transform: Translate {
+            y: root.expanded ? 0 : Kirigami.Units.gridUnit * 2
+            Behavior on y {
+                enabled: root.showAnimations
+                NumberAnimation { duration: 240; easing.type: Easing.OutCubic }
+            }
+        }
+
+        ColumnLayout {
+            anchors.fill: parent
+            anchors.margins: Kirigami.Units.largeSpacing
+            spacing: Kirigami.Units.largeSpacing
+
+            // ── Fila superior: barra de estado, ancho completo ──────────────
+            StatusBar {
+                id: statusBar
+                Layout.fillWidth: true
+                Layout.preferredHeight: Kirigami.Units.gridUnit * 3
+            }
+
+            // ── Fila principal: dos columnas ─────────────────────────────────
+            GridLayout {
+                id: mainGrid
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                columns: 3
+                columnSpacing: Kirigami.Units.largeSpacing
+                rowSpacing: Kirigami.Units.largeSpacing
+
+                ApplicationLauncher {
+                    id: appLauncher
+                    Layout.columnSpan: 2          // ocupa 2 de las 3 columnas → ~66%
+                    // Layout.fillWidth: true
+                    Layout.preferredWidth: Kirigami.Units.gridUnit * 70
+                    Layout.fillHeight: true
+                    columns: root.launcherColumns
+                }
+
+                ColumnLayout {
+                    Layout.columnSpan: 1          // ocupa 1 de las 3 columnas → ~33%
+                    Layout.fillHeight: true
+                    Layout.preferredWidth: Kirigami.Units.gridUnit * 25
+                    Layout.alignment: Qt.AlignRight
+                    spacing: Kirigami.Units.largeSpacing
+
+                    QuickSettings {
+                        id: quickSettings
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                    }
+
+                    SystemStats {
+                        id: systemStats
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        refreshInterval: root.refreshIntervalSec * 1000
+                    }
+                }
+            }
+        }
+
+        onActiveFocusChanged: {
+            if (activeFocus) {
+                appLauncher.focusSearch()
+            }
+        }
+    }
+    
+    
+    /*FocusScope {
         id: fullRoot
 
         // ── Tamaño ───────────────────────────────────────────────────────
@@ -218,5 +311,5 @@ PlasmoidItem {
                 appLauncher.focusSearch()
             }
         }
-    }  // fullRepresentation
+    }*/  // fullRepresentation
 }  // PlasmoidItem

@@ -280,14 +280,14 @@ Item {
         }
 
         // Separator after battery — only shown when battery is present
-        Kirigami.Separator {
+        /*Kirigami.Separator {
             //orientation: Qt.Vertical
             Layout.fillHeight: true
             visible: statusBar.batteryPresent
-        }
+        }*/
 
         // ── 3. WIFI ───────────────────────────────────────────────────────
-        RowLayout {
+        /*RowLayout {
             spacing: Kirigami.Units.smallSpacing
             Layout.alignment: Qt.AlignVCenter
 
@@ -314,13 +314,13 @@ Item {
                 elide: Text.ElideRight
                 maximumLineCount: 1
             }
-        }
+        }*/
 
         // ── Separator ─────────────────────────────────────────────────────
-        Kirigami.Separator {
+        /*Kirigami.Separator {
             //orientation: Qt.Vertical
             Layout.fillHeight: true
-        }
+        }*/
 
         // ── 4. CLOCK ──────────────────────────────────────────────────────
         // Spacer pushes the clock toward the centre of the bar.
@@ -349,22 +349,22 @@ Item {
         Item { Layout.fillWidth: true }
 
         // ── Separator ─────────────────────────────────────────────────────
-        Kirigami.Separator {
+        /*Kirigami.Separator {
             //orientation: Qt.Vertical
             Layout.fillHeight: true
-        }
+        }*/
 
         // ── 5. HOSTNAME ───────────────────────────────────────────────────
         RowLayout {
             spacing: Kirigami.Units.smallSpacing
             Layout.alignment: Qt.AlignVCenter
 
-            Kirigami.Icon {
+            /*Kirigami.Icon {
                 source: "computer-laptop"
                 width:  Kirigami.Units.iconSizes.small
                 height: width
                 Layout.alignment: Qt.AlignVCenter
-            }
+            }*/
 
             PlasmaComponents3.Label {
                 text:  statusBar.hostName.length > 0

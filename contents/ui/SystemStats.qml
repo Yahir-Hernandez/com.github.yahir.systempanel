@@ -36,10 +36,13 @@ Item {
     property real  tempCelsius: 0.0
 
     // Network
-    property var   netPrevSample:    null
+    /*property var   netPrevSample:    null
     property int   netPrevTimestamp: 0
     property real  netTxMbps:        0.0
     property real  netRxMbps:        0.0
+    */
+
+     property int    batteryLevel:    -1
 
     // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -55,11 +58,11 @@ Item {
         return "temperature-normal"
     }
 
-    function formatMbps(mbps) {
+    /*function formatMbps(mbps) {
         if (mbps >= 1000) return (mbps / 1000).toFixed(1) + " Gbps"
         if (mbps >= 1)    return mbps.toFixed(1) + " Mbps"
         return (mbps * 1000).toFixed(0) + " Kbps"
-    }
+    }*/
 
     // ── Data collection ────────────────────────────────────────────────────────
 
@@ -69,6 +72,7 @@ Item {
     readonly property string cmdDisk: "df -k / | awk 'NR==2{printf \"%d %d\", $3, $2}'"
     readonly property string cmdTemp: "cat /sys/class/thermal/thermal_zone0/temp 2>/dev/null || echo \"0\""
     readonly property string cmdNet:  "awk 'NR>2 && !/lo/{rx+=$2; tx+=$10} END{print rx, tx}' /proc/net/dev"
+    readonly property string cmdBattery: "cat /sys/class/power_supply/BAT0/capacity"
 
     Plasma5Support.DataSource {
         id: sysMonDS
@@ -91,6 +95,7 @@ Item {
         sysMonDS.connectSource(cmdDisk)
         sysMonDS.connectSource(cmdTemp)
         sysMonDS.connectSource(cmdNet)
+        sysMonDS.connectSource(cmdBattery)
     }
 
     // Second CPU sample fires 500ms after the first
@@ -124,6 +129,8 @@ Item {
             handleTemp(output)
         } else if (src === cmdNet) {
             handleNet(output)
+        } else if (src === cmdBattery) {
+            handleBattery(output)
         }
     }
 
@@ -163,7 +170,15 @@ Item {
         tempCelsius = SysMon.parseTemp(output)
     }
 
-    function handleNet(output) {
+    function handleBattery(output) {
+        var cap = parseInt(output, 10)
+        if (!isNaN(cap)) {
+             systemStats.batteryLevel   = cap
+        }
+    }
+    
+
+    /*function handleNet(output) {
         var parts = output.split(" ")
         if (parts.length < 2) return
 
@@ -180,13 +195,50 @@ Item {
 
         netPrevSample    = { rx: rx, tx: tx }
         netPrevTimestamp = now
+    }*/
+
+    /**
+     * Map a battery level (0-100) and charging flag to an icon name.
+     * Uses standard freedesktop/KDE battery icon naming.
+     */
+    function batteryIconName(level) {
+
+        if (level >= 90) return "battery-full"
+        if (level >= 60) return "battery-good"
+        if (level >= 35) return "battery-medium"
+        if (level >= 10) return "battery-low"
+        return "battery-empty"
     }
 
     // ── UI ─────────────────────────────────────────────────────────────────────
 
-    RowLayout {
+    ColumnLayout {
         anchors.fill: parent
         spacing: Kirigami.Units.smallSpacing
+
+        // ── Battery card ─────────────────────────────────────────────────────────
+        MetricCard {
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+
+            iconName:  batteryIconName(systemStats.batteryLevel)
+            labelText: i18n("Battery")
+            valueText: {
+                    if (systemStats.batteryLevel < 0) return ""
+                    var pct = systemStats.batteryLevel + "%"
+                    return systemStats.batteryCharging ? pct + "  " + i18n("Charging") : pct
+                }
+            barValue:  systemStats.batteryLevel / 100
+            barColor:  {
+                    // Colour-code: red below 15%, orange below 30%, normal otherwise
+                    if (systemStats.batteryLevel >= 0 && systemStats.batteryLevel < 15)
+                        return Kirigami.Theme.negativeTextColor
+                    if (systemStats.batteryLevel >= 0 && systemStats.batteryLevel < 30)
+                        return Kirigami.Theme.neutralTextColor
+                    return Kirigami.Theme.textColor
+                }
+            showBar:   true
+        }
 
         // ── CPU card ─────────────────────────────────────────────────────────
         MetricCard {
@@ -228,7 +280,7 @@ Item {
         }
 
         // ── Temperature card ─────────────────────────────────────────────────
-        MetricCard {
+        /*MetricCard {
             Layout.fillWidth: true
             Layout.fillHeight: true
 
@@ -236,10 +288,10 @@ Item {
             labelText: i18n("Temp")
             valueText: Math.round(systemStats.tempCelsius) + " °C"
             showBar:   false
-        }
+        }*/
 
         // ── Network card ─────────────────────────────────────────────────────
-        MetricCard {
+        /*MetricCard {
             Layout.fillWidth: true
             Layout.fillHeight: true
 
@@ -248,14 +300,12 @@ Item {
             valueText: "↑ " + systemStats.formatMbps(systemStats.netTxMbps) +
                        "  ↓ " + systemStats.formatMbps(systemStats.netRxMbps)
             showBar:   false
-        }
+        }*/
     }
 
     // ── MetricCard component ──────────────────────────────────────────────────
-
     component MetricCard: Rectangle {
         id: card
-
         property string iconName:  ""
         property string labelText: ""
         property string valueText: ""
@@ -267,67 +317,85 @@ Item {
         radius: Kirigami.Units.cornerRadius
 
         // Subtle border using theme color
-        border.color: Qt.rgba(
+        /*border.color: Qt.rgba(
             Kirigami.Theme.textColor.r,
             Kirigami.Theme.textColor.g,
             Kirigami.Theme.textColor.b,
             0.08
-        )
-        border.width: 1
+        )*/
 
-        ColumnLayout {
-            anchors {
-                fill:    parent
-                margins: Kirigami.Units.smallSpacing
-            }
-            spacing: Kirigami.Units.smallSpacing / 2
-
+        RowLayout {
+            anchors.fill: parent
+            spacing: Kirigami.Units.largeSpacing
+            anchors.margins: Kirigami.Units.largeSpacing
+            Layout.fillWidth: true
             // Icon
             Kirigami.Icon {
                 Layout.alignment: Qt.AlignHCenter
                 source: card.iconName
-                implicitWidth:  Kirigami.Units.iconSizes.small
-                implicitHeight: Kirigami.Units.iconSizes.small
+                implicitWidth:  40 //Kirigami.Units.iconSizes.small
+                implicitHeight: 40 //Kirigami.Units.iconSizes.small
             }
 
-            // Label (metric name)
-            PlasmaComponents3.Label {
-                Layout.alignment:    Qt.AlignHCenter
-                Layout.fillWidth:    true
-                text:                card.labelText
-                font.pixelSize:      Kirigami.Units.gridUnit * 0.7
-                font.weight:         Font.Medium
-                horizontalAlignment: Text.AlignHCenter
-                elide:               Text.ElideRight
-                opacity:             0.75
-            }
-
-            // Value
-            PlasmaComponents3.Label {
-                Layout.alignment:    Qt.AlignHCenter
-                Layout.fillWidth:    true
-                text:                card.valueText
-                font.pixelSize:      Kirigami.Units.gridUnit * 0.75
-                horizontalAlignment: Text.AlignHCenter
-                elide:               Text.ElideRight
-                color:               card.showBar ? card.barColor : Kirigami.Theme.textColor
-                wrapMode:            Text.NoWrap
-            }
-
-            // Progress bar (optional)
-
-            /*Kirigami.ProgressBar {
+            ColumnLayout{
                 Layout.fillWidth: true
-                visible:  card.showBar
-                value:    card.barValue
-                from:     0.0
-                to:       1.0
+                spacing: 2
 
-                // Tint the bar using the color-coded foreground
-                Kirigami.Theme.highlightColor: card.barColor
-            }*/
+                RowLayout {
+                    Layout.fillWidth: true
+                    PlasmaComponents3.Label {
+                        Layout.alignment:    Qt.AlignLeft
+                        Layout.fillWidth:    true
+                        text:                card.labelText
+                        font.pixelSize:      Kirigami.Units.gridUnit * 0.7
+                        font.weight:         Font.Medium
+                        horizontalAlignment: Text.AlignLeft
+                        elide:               Text.ElideRight
+                        opacity:             0.75
+                    }
 
-            Item { Layout.fillHeight: true }
-        }
+                    Item { Layout.fillWidth: true }
+                    PlasmaComponents3.Label {
+                        Layout.alignment:    Qt.AlignRight
+                        Layout.fillWidth:    true
+                        text:                card.valueText
+                        font.pixelSize:      Kirigami.Units.gridUnit * 0.75
+                        horizontalAlignment: Text.AlignRight
+                        elide:               Text.ElideRight
+                        color:               card.showBar ? card.barColor : Kirigami.Theme.textColor
+                        wrapMode:            Text.NoWrap
+                    }
+                }
+
+                
+                Rectangle {
+                    id: progressBackground
+                    Layout.fillWidth: card.showBar 
+                    Layout.preferredHeight: 8
+                    radius: height / 2
+                    color: Kirigami.Theme.disabledTextColor
+                    
+
+                    Rectangle {
+                        /*Layout.preferredWidth: card.barValue * 100
+                        Layout.fillHeight: true
+                        color: card.barColor */
+                        id: progressFill
+                        anchors {
+                            left:            parent.left
+                            top:             parent.top
+                            bottom:          parent.bottom
+                        }
+                        width:  parent.width * card.barValue
+                        radius: height / 2
+                        color:  card.barColor
+
+                        Behavior on width {
+                            NumberAnimation { duration: 200; easing.type: Easing.OutCubic }
+                        }
+                    }
+                }
+            }
+        } 
     }
 }
